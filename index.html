@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>מערכת רישום עבודות — סנכרון דלתא יציב (Chunked)</title>
+<title>מערכת רישום עבודות — פרודקשן (סנכרון אוטומטי)</title>
 <style>
 :root{--bg:#0b1220;--line:rgba(255,255,255,.10);--muted:rgba(255,255,255,.70);--txt:#fff;--accent:#4f8cff;--ok:#22c55e;--bad:#ef4444;--r:16px}
 *{box-sizing:border-box}
 body{margin:0;color:var(--txt);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans Hebrew",sans-serif;
 background:radial-gradient(900px 500px at 80% -10%, rgba(79,140,255,.25), transparent 60%),
 radial-gradient(900px 500px at 10% 0%, rgba(34,197,94,.12), transparent 55%), var(--bg)}
-.wrap{max-width:1240px;margin:24px auto 60px;padding:0 14px}
+.wrap{max-width:1240px;margin:24px auto 80px;padding:0 14px}
 header{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
 h1{margin:0;font-size:22px}
 .sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.35;max-width:920px}
@@ -31,6 +31,7 @@ button{cursor:pointer;font-weight:900;background:rgba(79,140,255,.18);border-col
 button.primary{background:linear-gradient(180deg, rgba(79,140,255,.95), rgba(79,140,255,.70));border-color:rgba(79,140,255,.85)}
 button.ghost{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
 button.ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.45)}
+button.bad{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.45)}
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
 .hint{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.35}
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -42,35 +43,72 @@ padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
 background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:50}
 .toast.show{display:block;animation:pop .18s ease-out}
 @keyframes pop{from{transform:translateY(6px);opacity:0}to{transform:translateY(0);opacity:1}}
-.status{font-size:12px;color:var(--muted)}
-.status.ok{color:rgba(34,197,94,.95)}
-.status.bad{color:rgba(239,68,68,.95)}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:980px){.split{grid-template-columns:1fr}}
 .accGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
 @media (max-width:980px){.accGrid{grid-template-columns:1fr}}
 .accBox{border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px;background:rgba(0,0,0,.14)}
+
+/* ===== Production Sync Widget ===== */
+.syncFab{
+  position:fixed;
+  inset-inline-end:12px;
+  inset-block-end:12px;
+  z-index:60;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.14);
+  background:rgba(15,26,46,.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  max-width:min(92vw, 520px);
+}
+.dot{width:10px;height:10px;border-radius:50%;background:#64748b;flex:0 0 auto}
+.dot.ok{background:rgba(34,197,94,.95)}
+.dot.bad{background:rgba(239,68,68,.95)}
+.syncText{font-size:12px;color:rgba(255,255,255,.88);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:44vw}
+.syncFab button{padding:8px 10px;border-radius:999px}
+.syncFab .mini{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
+
+.modalBack{
+  position:fixed;inset:0;background:rgba(0,0,0,.55);
+  display:none;z-index:80;
+}
+.modalBack.show{display:block}
+.modal{
+  position:fixed;inset-inline:12px;inset-block-end:12px;
+  max-width:720px;margin-inline:auto;
+  background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:18px;
+  padding:14px;
+  display:none;z-index:90;
+}
+.modal.show{display:block;animation:pop .18s ease-out}
+.modal h3{margin:0 0 10px;font-size:14px}
+.modal .row2{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.modal .row2 > div{flex:1 1 260px}
+.small{font-size:12px;color:var(--muted);line-height:1.35;margin-top:8px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div>
-      <h1>מערכת רישום עבודות — סנכרון יציב (מיזוג + Chunking)</h1>
+      <h1>מערכת רישום עבודות</h1>
       <div class="sub">
-        ✅ אם בטלפון קיבלת <b>script_error</b>, זה לרוב בגלל מגבלת אורך URL. כאן הסנכרון נשלח במנות קטנות.<br/>
-        ✅ Pull אוטומטי בפתיחה + כל דקה.
+        סנכרון Google Drive עובד <b>אוטומטית</b> (בפתיחה + כל דקה). אין צורך “לבדוק חיבור” כל פעם.
       </div>
     </div>
-    <div class="pill" id="drivePill">Drive: לא מחובר</div>
+    <div class="pill" id="preview">סה״כ: 0 ₪</div>
   </header>
 
   <div class="grid">
     <div class="card">
-      <div class="cardHead">
-        <h2>טופס הזנה</h2>
-        <span class="pill" id="preview">סה״כ: 0 ₪</span>
-      </div>
+      <div class="cardHead"><h2>טופס הזנה</h2><span class="pill" id="monthPill">חודש: —</span></div>
       <div class="cardBody">
         <div class="row">
           <div class="field">
@@ -108,26 +146,6 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
           <button class="primary" id="addBtn">הוסף לרשומות</button>
           <button class="ghost" id="resetBtn" type="button">איפוס טופס</button>
         </div>
-
-        <hr style="border:0;border-top:1px solid rgba(255,255,255,.10);margin:14px 0"/>
-
-        <div class="card" style="background:rgba(0,0,0,.14);border-radius:14px;">
-          <div class="cardHead" style="border-bottom:0;padding:12px 12px 6px;">
-            <h2 style="font-size:14px;">Google Drive Sync</h2>
-            <span class="pill" id="lastSync">אחרון: —</span>
-          </div>
-          <div class="cardBody" style="padding:12px;">
-            <label>Web App URL (מסתיים ב- /exec)</label>
-            <input id="endpoint" type="text" placeholder="https://script.google.com/macros/s/.../exec"/>
-            <div class="actions">
-              <button class="ghost" id="testBtn" type="button">בדיקת חיבור</button>
-              <button class="ok" id="syncBtn" type="button">סנכרון דו־כיווני עכשיו</button>
-            </div>
-            <div class="status" id="status">סטטוס: לא מחובר</div>
-            <div class="hint">סנכרון נשלח במנות כדי לעבוד טוב בטלפון.</div>
-          </div>
-        </div>
-
       </div>
     </div>
 
@@ -172,6 +190,32 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
   </div>
 </div>
 
+<!-- Sync Widget -->
+<div class="syncFab" id="syncFab" role="button" aria-label="Sync status">
+  <div id="dot" class="dot"></div>
+  <div class="syncText" id="syncText">Drive: לא מחובר (הגדר URL)</div>
+  <button class="mini" id="gearBtn" type="button">⚙️</button>
+</div>
+
+<div class="modalBack" id="modalBack"></div>
+<div class="modal" id="modal">
+  <h3>הגדרות סנכרון</h3>
+  <div class="row2">
+    <div>
+      <label>Web App URL (מסתיים ב- /exec)</label>
+      <input id="endpoint" type="text" placeholder="https://script.google.com/macros/s/.../exec"/>
+      <div class="small">טיפ: אחרי שהגדרת פעם אחת, אין צורך לגעת בזה. הסנכרון אוטומטי.</div>
+    </div>
+    <div style="flex:0 0 240px;">
+      <div class="actions" style="margin-top:0">
+        <button class="ok" id="syncNowBtn" type="button">סנכרון עכשיו</button>
+        <button class="ghost" id="closeBtn" type="button">סגור</button>
+      </div>
+      <div class="small" id="lastSync">אחרון: —</div>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -181,18 +225,23 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
   const MULT={"תקופתי":15,"בודד":50};
   const PRICES={"הארקה":35,"חצי מערכת 3/4":70,"מערכת 3/4":100,"חצי מערכת צול":85,"מערכת צול":115,"ברז 3/4":30,"ברז 1 צול":40};
 
-  const K_DATA="worklog_chunk_data_v1";
-  const K_EP="worklog_chunk_endpoint_v1";
-  const K_LAST="worklog_chunk_lastSync_v1";
-  const K_QUEUE="worklog_chunk_queue_v1";
+  const K_DATA="worklog_prod_data_v1";
+  const K_EP="worklog_prod_endpoint_v1";
+  const K_LAST="worklog_prod_lastSync_v1";
+  const K_QUEUE="worklog_prod_queue_v1";
 
   const $=id=>document.getElementById(id);
   const dateEl=$("date"), addressEl=$("address"), kindEl=$("kind"), qtyEl=$("qty");
   const accListEl=$("accList"), addBtn=$("addBtn"), resetBtn=$("resetBtn");
   const monthEl=$("month"), rowsEl=$("rows"), totalEl=$("total"), previewEl=$("preview");
   const profitEl=$("profit"), exportBtn=$("exportBtn");
-  const endpointEl=$("endpoint"), testBtn=$("testBtn"), syncBtn=$("syncBtn");
-  const statusEl=$("status"), drivePill=$("drivePill"), lastSyncEl=$("lastSync");
+  const monthPill=$("monthPill");
+
+  const endpointEl=$("endpoint");
+  const syncFab=$("syncFab"), dotEl=$("dot"), syncText=$("syncText");
+  const gearBtn=$("gearBtn"), modal=$("modal"), modalBack=$("modalBack");
+  const closeBtn=$("closeBtn"), syncNowBtn=$("syncNowBtn");
+  const lastSyncEl=$("lastSync");
   const toast=$("toast");
 
   function toastMsg(msg){toast.textContent=msg;toast.classList.add("show");clearTimeout(toastMsg._t);toastMsg._t=setTimeout(()=>toast.classList.remove("show"),1700);}
@@ -209,14 +258,17 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
   let data=loadJson(K_DATA,[]);
   let queue=loadJson(K_QUEUE,[]);
 
-  function setDriveUI(ok,text){
-    statusEl.textContent="סטטוס: "+text;
-    statusEl.classList.toggle("ok",!!ok);
-    statusEl.classList.toggle("bad",!ok);
-    drivePill.textContent="Drive: "+(ok?"מחובר":"לא מחובר");
-    drivePill.style.borderColor= ok ? "rgba(34,197,94,.45)" : "rgba(255,255,255,.14)";
-    drivePill.style.background= ok ? "rgba(34,197,94,.10)" : "rgba(255,255,255,.06)";
+  function setSyncUI(state, msg){
+    // state: "idle" | "ok" | "bad" | "syncing"
+    dotEl.className="dot" + (state==="ok" ? " ok" : state==="bad" ? " bad" : "");
+    syncText.textContent=msg;
   }
+
+  function openModal(){ modal.classList.add("show"); modalBack.classList.add("show"); }
+  function closeModal(){ modal.classList.remove("show"); modalBack.classList.remove("show"); }
+  gearBtn.addEventListener("click",(e)=>{e.stopPropagation(); openModal();});
+  closeBtn.addEventListener("click", closeModal);
+  modalBack.addEventListener("click", closeModal);
 
   function buildAccessories(){
     accListEl.innerHTML="";
@@ -264,17 +316,13 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
     return {total:base+acc};
   }
 
-  function computeFromForm(){
+  function updatePreview(){
     const kind=kindEl.value;
     const qty=Math.max(0,Math.floor(Number(qtyEl.value||0)));
     const acc=selectedAccessories();
     const base=qty*(MULT[kind]??0);
     const accSum=acc.reduce((s,a)=>s + a.qty*(PRICES[a.name]??0),0);
-    return {total:base+accSum};
-  }
-
-  function updatePreview(){
-    previewEl.textContent=`סה״כ: ${Math.round(computeFromForm().total).toLocaleString("he-IL")} ₪`;
+    previewEl.textContent=`סה״כ: ${Math.round(base+accSum).toLocaleString("he-IL")} ₪`;
   }
 
   function resetForm(){
@@ -333,7 +381,8 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
 
   function monthData(){
     const m=monthEl.value;
-    return data.filter(e=>!e.deleted && String(e.date||"").startsWith(m)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    return data.filter(e=>!e.deleted && String(e.date||"").startsWith(m))
+      .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   }
 
   function render(){
@@ -354,11 +403,15 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
     rowsEl.querySelectorAll("button[data-del]").forEach(b=>b.addEventListener("click", ()=>del(b.dataset.del)));
     totalEl.textContent=Math.round(total).toLocaleString("he-IL");
     renderProfit(rows);
+    monthPill.textContent="חודש: "+monthEl.value;
   }
 
   function renderProfit(rows){
     const agg={"תקופתי":{count:0,qty:0,total:0},"בודד":{count:0,qty:0,total:0}};
-    rows.forEach(e=>{const a=agg[e.kind]||(agg[e.kind]={count:0,qty:0,total:0});a.count++;a.qty+=Number(e.qty||0);a.total+=compute(e).total;});
+    rows.forEach(e=>{
+      const a=agg[e.kind]||(agg[e.kind]={count:0,qty:0,total:0});
+      a.count++; a.qty+=Number(e.qty||0); a.total+=compute(e).total;
+    });
     profitEl.innerHTML="";
     ["תקופתי","בודד"].forEach(k=>{
       const a=agg[k];
@@ -407,23 +460,8 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
     const json=JSON.stringify(obj);
     return btoa(unescape(encodeURIComponent(json))).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
   }
-
   function loadLastSync(){return localStorage.getItem(K_LAST)||"";}
   function saveLastSync(v){localStorage.setItem(K_LAST,v||"");}
-
-  async function testDrive(){
-    const ep=endpointEl.value.trim();
-    if(!ep) return setDriveUI(false,"חסר URL");
-    saveStr(K_EP, ep);
-    setDriveUI(false,"בודק...");
-    try{
-      const res=await jsonp(ep,{action:"ping", t:Date.now()});
-      if(res && res.ok){ setDriveUI(true,"מחובר ✅"); toastMsg("Drive מחובר ✅"); }
-      else setDriveUI(false,"תגובה לא תקינה");
-    }catch(e){
-      setDriveUI(false,"שגיאה בחיבור ("+e.message+")");
-    }
-  }
 
   function mergeRemote(remoteItems){
     let applied=0;
@@ -447,45 +485,33 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
     saveJson(K_QUEUE, queue);
   }
 
-  // Chunking strategy: keep the encoded payload under a safe cap for mobile.
+  // Chunking to avoid mobile URL limits
   function buildPayload(pushSlice){
-    return {
-      since: loadLastSync(),
-      push: pushSlice.map(q=>({action:q.action, entry:q.entry, at:q.at})),
-      clientTime: new Date().toISOString()
-    };
+    return { since: loadLastSync(), push: pushSlice.map(q=>({action:q.action, entry:q.entry, at:q.at})), clientTime: new Date().toISOString() };
   }
-
   async function syncOnce(ep, pushSlice){
     const payload = buildPayload(pushSlice);
     const encoded = toB64Url(payload);
-    // If even a single entry is too big, fail clearly.
-    if(encoded.length > 1800 && pushSlice.length === 1){
-      throw new Error("payload_too_large_single");
-    }
-    // Try sending
+    if(encoded.length > 1800 && pushSlice.length === 1) throw new Error("payload_too_large_single");
     return await jsonp(ep, {action:"sync", p: encoded, t: Date.now()});
   }
 
   async function syncNow(opts={}){
     const ep=endpointEl.value.trim();
-    if(!ep){ if(!opts.silent) setDriveUI(false,"חסר URL"); return; }
+    if(!ep){
+      setSyncUI("bad","Drive: לא מחובר (הגדר URL)");
+      return;
+    }
     saveStr(K_EP, ep);
 
-    if(!opts.silent) setDriveUI(true,"מסנכרן...");
-
+    if(!opts.silent) setSyncUI("idle","Drive: מסנכרן…");
     try{
-      // 1) PUSH in small batches (adaptive)
       let remaining = queue.slice();
-      let serverTime = null;
       let pulled = 0;
 
       while(remaining.length){
-        // start with up to 15 items, then shrink until payload under cap
         let n = Math.min(15, remaining.length);
         let batch = remaining.slice(0, n);
-
-        // shrink if needed
         while(n > 1){
           const encoded = toB64Url(buildPayload(batch));
           if(encoded.length <= 1800) break;
@@ -496,36 +522,34 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
         const res = await syncOnce(ep, batch);
         if(!res || res.ok !== true) throw new Error(res?.error || "bad_response");
 
-        // Apply pulled changes (can be repeated; merge handles it)
         pulled += mergeRemote(res.changes || []);
         ackQueue(res.ackedIds || []);
-        serverTime = res.serverTime || serverTime;
-
-        // Recompute remaining from current queue (after ack)
-        remaining = queue.slice();
-        // Update since progressively to reduce future pulls
         if(res.serverTime) saveLastSync(res.serverTime);
+
+        remaining = queue.slice();
       }
 
-      // 2) Always do a final pull (no push) to ensure we didn't miss changes
       const res2 = await syncOnce(ep, []);
       if(!res2 || res2.ok !== true) throw new Error(res2?.error || "bad_response");
       pulled += mergeRemote(res2.changes || []);
       if(res2.serverTime) saveLastSync(res2.serverTime);
 
-      lastSyncEl.textContent="אחרון: "+new Date().toLocaleString("he-IL");
-      setDriveUI(true, `סונכרן ✅ (נמשכו ${pulled}, בתור ${queue.length})`);
+      const nowTxt = new Date().toLocaleString("he-IL");
+      lastSyncEl.textContent = "אחרון: " + nowTxt;
+      setSyncUI("ok", pulled ? `Drive: עודכן ✅ (+${pulled})` : "Drive: מסונכרן ✅");
       render();
       if(!opts.silent) toastMsg("סנכרון הושלם ✅");
     }catch(e){
-      setDriveUI(false,"שגיאה בסנכרון ("+e.message+")");
-      if(!opts.silent) toastMsg("שגיאה בסנכרון");
+      setSyncUI("bad","Drive: שגיאה ("+e.message+")");
+      if(!opts.silent) toastMsg("שגיאת סנכרון");
     }
   }
 
   // init
   dateEl.value=todayISO();
   monthEl.value=thisMonth();
+  monthPill.textContent="חודש: "+monthEl.value;
+
   endpointEl.value=loadStr(K_EP);
   buildAccessories();
   updatePreview();
@@ -533,24 +557,26 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
 
   const last=loadLastSync();
   lastSyncEl.textContent="אחרון: "+(last ? new Date(last).toLocaleString("he-IL") : "—");
-  if(endpointEl.value) setDriveUI(true,"מוגדר ✅ (לחץ בדיקה)");
 
+  // UI bindings
   addBtn.addEventListener("click",(e)=>{e.preventDefault(); addRow();});
   resetBtn.addEventListener("click",(e)=>{e.preventDefault(); resetForm();});
   qtyEl.addEventListener("input", updatePreview);
   kindEl.addEventListener("change", updatePreview);
   monthEl.addEventListener("change", render);
   exportBtn.addEventListener("click", exportCSV);
+  endpointEl.addEventListener("change", ()=>{ saveStr(K_EP, endpointEl.value.trim()); syncNow({silent:true}); });
 
-  testBtn.addEventListener("click", testDrive);
-  syncBtn.addEventListener("click", ()=>syncNow({silent:false}));
-  endpointEl.addEventListener("change", ()=>saveStr(K_EP, endpointEl.value.trim()));
+  syncNowBtn.addEventListener("click", ()=>syncNow({silent:false}));
 
+  // Auto sync
   if(endpointEl.value){
-    setTimeout(()=>syncNow({silent:true}), 2500);
+    setSyncUI("idle","Drive: מתחבר…");
+    setTimeout(()=>syncNow({silent:true}), 1200);
     setInterval(()=>syncNow({silent:true}), 60000);
+  }else{
+    setSyncUI("bad","Drive: לא מחובר (הגדר URL)");
   }
-
 })();
 </script>
 </body>
