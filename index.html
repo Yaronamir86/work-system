@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>מערכת רישום עבודות — פרודקשן (סנכרון אוטומטי)</title>
+<title>מערכת רישום עבודות — פרודקשן (סנכרון אוטומטי + גיבוי)</title>
 <style>
 :root{--bg:#0b1220;--line:rgba(255,255,255,.10);--muted:rgba(255,255,255,.70);--txt:#fff;--accent:#4f8cff;--ok:#22c55e;--bad:#ef4444;--r:16px}
 *{box-sizing:border-box}
@@ -31,7 +31,6 @@ button{cursor:pointer;font-weight:900;background:rgba(79,140,255,.18);border-col
 button.primary{background:linear-gradient(180deg, rgba(79,140,255,.95), rgba(79,140,255,.70));border-color:rgba(79,140,255,.85)}
 button.ghost{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
 button.ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.45)}
-button.bad{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.45)}
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
 .hint{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.35}
 table{width:100%;border-collapse:collapse;font-size:12px}
@@ -48,8 +47,9 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
 .accGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
 @media (max-width:980px){.accGrid{grid-template-columns:1fr}}
 .accBox{border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px;background:rgba(0,0,0,.14)}
+.accQty{padding:10px 12px}
 
-/* ===== Production Sync Widget ===== */
+/* ===== Minimal Sync Widget ===== */
 .syncFab{
   position:fixed;
   inset-inline-end:12px;
@@ -73,14 +73,11 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
 .syncFab button{padding:8px 10px;border-radius:999px}
 .syncFab .mini{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
 
-.modalBack{
-  position:fixed;inset:0;background:rgba(0,0,0,.55);
-  display:none;z-index:80;
-}
+.modalBack{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:80}
 .modalBack.show{display:block}
 .modal{
   position:fixed;inset-inline:12px;inset-block-end:12px;
-  max-width:720px;margin-inline:auto;
+  max-width:760px;margin-inline:auto;
   background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
   border:1px solid rgba(255,255,255,.14);
   border-radius:18px;
@@ -92,6 +89,7 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
 .modal .row2{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
 .modal .row2 > div{flex:1 1 260px}
 .small{font-size:12px;color:var(--muted);line-height:1.35;margin-top:8px}
+hr.sep{border:0;border-top:1px solid rgba(255,255,255,.10);margin:12px 0}
 </style>
 </head>
 <body>
@@ -100,7 +98,7 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
     <div>
       <h1>מערכת רישום עבודות</h1>
       <div class="sub">
-        סנכרון Google Drive עובד <b>אוטומטית</b> (בפתיחה + כל דקה). אין צורך “לבדוק חיבור” כל פעם.
+        סנכרון Google Drive עובד <b>אוטומטית</b> (בפתיחה + כל דקה). בנוסף יש <b>גיבוי מקומי גרסאות</b> (20 snapshot אחרונים) למקרי חירום.
       </div>
     </div>
     <div class="pill" id="preview">סה״כ: 0 ₪</div>
@@ -139,7 +137,7 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
         <details style="margin-top:12px;">
           <summary style="cursor:pointer;font-weight:900;">אביזרים (בחירה מרובה + כמות)</summary>
           <div class="accGrid" id="accList"></div>
-          <div class="hint">מחירון: הארקה=35 | חצי 3/4=70 | 3/4=100 | חצי צול=85 | צול=115 | ברז 3/4=30 | ברז 1 צול=40</div>
+          <div class="hint">שורת הכמות באביזרים מתחילה ריקה (לא 0 ולא 1) — חובה למלא אם סימנת אביזר.</div>
         </details>
 
         <div class="actions">
@@ -191,7 +189,7 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
 </div>
 
 <!-- Sync Widget -->
-<div class="syncFab" id="syncFab" role="button" aria-label="Sync status">
+<div class="syncFab" id="syncFab">
   <div id="dot" class="dot"></div>
   <div class="syncText" id="syncText">Drive: לא מחובר (הגדר URL)</div>
   <button class="mini" id="gearBtn" type="button">⚙️</button>
@@ -199,19 +197,35 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
 
 <div class="modalBack" id="modalBack"></div>
 <div class="modal" id="modal">
-  <h3>הגדרות סנכרון</h3>
+  <h3>הגדרות</h3>
   <div class="row2">
     <div>
       <label>Web App URL (מסתיים ב- /exec)</label>
       <input id="endpoint" type="text" placeholder="https://script.google.com/macros/s/.../exec"/>
-      <div class="small">טיפ: אחרי שהגדרת פעם אחת, אין צורך לגעת בזה. הסנכרון אוטומטי.</div>
+      <div class="small">ה-URL נשמר במכשיר (localStorage) — לכן בפעם הראשונה בכל מכשיר תצטרך להזין אותו פעם אחת.</div>
     </div>
-    <div style="flex:0 0 240px;">
+    <div style="flex:0 0 280px;">
       <div class="actions" style="margin-top:0">
         <button class="ok" id="syncNowBtn" type="button">סנכרון עכשיו</button>
         <button class="ghost" id="closeBtn" type="button">סגור</button>
       </div>
       <div class="small" id="lastSync">אחרון: —</div>
+    </div>
+  </div>
+
+  <hr class="sep"/>
+
+  <div class="row2">
+    <div>
+      <div style="font-weight:900;margin-bottom:6px;">גיבוי מקומי (חירום)</div>
+      <div class="small">נשמרים אוטומטית עד 20 גיבויים אחרונים (snapshot). זה עוזר אם עשית שינוי לא נכון/מחיקה בטעות.</div>
+      <div class="small" id="backupInfo">—</div>
+    </div>
+    <div style="flex:0 0 280px;">
+      <div class="actions" style="margin-top:0">
+        <button class="ghost" id="restoreBtn" type="button">שחזור מגיבוי אחרון</button>
+        <button class="ghost" id="downloadJsonBtn" type="button">הורדת גיבוי JSON</button>
+      </div>
     </div>
   </div>
 </div>
@@ -225,10 +239,11 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
   const MULT={"תקופתי":15,"בודד":50};
   const PRICES={"הארקה":35,"חצי מערכת 3/4":70,"מערכת 3/4":100,"חצי מערכת צול":85,"מערכת צול":115,"ברז 3/4":30,"ברז 1 צול":40};
 
-  const K_DATA="worklog_prod_data_v1";
-  const K_EP="worklog_prod_endpoint_v1";
-  const K_LAST="worklog_prod_lastSync_v1";
-  const K_QUEUE="worklog_prod_queue_v1";
+  const K_DATA="worklog_prod_data_v2";
+  const K_EP="worklog_prod_endpoint_v2";
+  const K_LAST="worklog_prod_lastSync_v2";
+  const K_QUEUE="worklog_prod_queue_v2";
+  const K_BACKUPS="worklog_prod_backups_v2"; // array of {ts, data, queue}
 
   const $=id=>document.getElementById(id);
   const dateEl=$("date"), addressEl=$("address"), kindEl=$("kind"), qtyEl=$("qty");
@@ -238,10 +253,12 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
   const monthPill=$("monthPill");
 
   const endpointEl=$("endpoint");
-  const syncFab=$("syncFab"), dotEl=$("dot"), syncText=$("syncText");
+  const dotEl=$("dot"), syncText=$("syncText");
   const gearBtn=$("gearBtn"), modal=$("modal"), modalBack=$("modalBack");
   const closeBtn=$("closeBtn"), syncNowBtn=$("syncNowBtn");
   const lastSyncEl=$("lastSync");
+
+  const restoreBtn=$("restoreBtn"), downloadJsonBtn=$("downloadJsonBtn"), backupInfo=$("backupInfo");
   const toast=$("toast");
 
   function toastMsg(msg){toast.textContent=msg;toast.classList.add("show");clearTimeout(toastMsg._t);toastMsg._t=setTimeout(()=>toast.classList.remove("show"),1700);}
@@ -258,13 +275,36 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
   let data=loadJson(K_DATA,[]);
   let queue=loadJson(K_QUEUE,[]);
 
+  function backups(){ return loadJson(K_BACKUPS, []); }
+  function pushBackup(reason){
+    // Keep last 20 snapshots
+    const b = backups();
+    b.unshift({
+      ts: new Date().toISOString(),
+      reason: reason || "auto",
+      data: data,
+      queue: queue
+    });
+    const trimmed = b.slice(0, 20);
+    saveJson(K_BACKUPS, trimmed);
+    renderBackupInfo();
+  }
+  function renderBackupInfo(){
+    const b = backups();
+    if(!b.length){
+      backupInfo.textContent = "אין גיבויים עדיין.";
+      return;
+    }
+    const last = b[0];
+    backupInfo.textContent = `גיבוי אחרון: ${new Date(last.ts).toLocaleString("he-IL")} (${last.reason}) | נשמרו: ${b.length}/20`;
+  }
+
   function setSyncUI(state, msg){
-    // state: "idle" | "ok" | "bad" | "syncing"
     dotEl.className="dot" + (state==="ok" ? " ok" : state==="bad" ? " bad" : "");
     syncText.textContent=msg;
   }
 
-  function openModal(){ modal.classList.add("show"); modalBack.classList.add("show"); }
+  function openModal(){ modal.classList.add("show"); modalBack.classList.add("show"); renderBackupInfo(); }
   function closeModal(){ modal.classList.remove("show"); modalBack.classList.remove("show"); }
   gearBtn.addEventListener("click",(e)=>{e.stopPropagation(); openModal();});
   closeBtn.addEventListener("click", closeModal);
@@ -283,31 +323,44 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
         </label>
         <div style="margin-top:8px;">
           <label>כמות</label>
-          <input type="number" min="0" step="1" value="1" data-qty="${esc(name)}" disabled/>
+          <input class="accQty" type="number" min="1" step="1" value="" placeholder="—" inputmode="numeric" data-qty="${esc(name)}" disabled/>
         </div>`;
       accListEl.appendChild(box);
     });
+
     accListEl.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
       cb.addEventListener("change", ()=>{
         const name=cb.dataset.name;
         const q=accListEl.querySelector(`input[data-qty="${CSS.escape(name)}"]`);
-        if(q){q.disabled=!cb.checked;if(cb.checked && Number(q.value)<=0) q.value=1;}
+        if(q){
+          q.disabled=!cb.checked;
+          if(!cb.checked){ q.value=""; }
+          q.placeholder = cb.checked ? "הזן כמות" : "—";
+        }
         updatePreview();
       });
     });
+
     accListEl.querySelectorAll('input[type="number"]').forEach(inp=>inp.addEventListener("input", updatePreview));
   }
 
-  function selectedAccessories(){
+  function selectedAccessories(strict=false){
     const res=[];
+    let missing=false;
     accListEl.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
       if(!cb.checked) return;
       const name=cb.dataset.name;
       const q=accListEl.querySelector(`input[data-qty="${CSS.escape(name)}"]`);
-      const qty=Math.max(0,Math.floor(Number(q?.value||0)));
-      if(qty>0) res.push({name,qty});
+      const raw = String(q?.value ?? "").trim();
+      const qty = raw === "" ? NaN : Math.max(0, Math.floor(Number(raw)));
+      if(!Number.isFinite(qty) || qty<=0){
+        missing=true;
+      }else{
+        res.push({name,qty});
+      }
     });
-    return res;
+    if(strict && missing) return {ok:false, list:[]};
+    return {ok: !missing, list: res};
   }
 
   function compute(entry){
@@ -319,16 +372,17 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
   function updatePreview(){
     const kind=kindEl.value;
     const qty=Math.max(0,Math.floor(Number(qtyEl.value||0)));
-    const acc=selectedAccessories();
+    const sel = selectedAccessories(false);
+    // For preview, treat missing qty as 0 (until user fills)
     const base=qty*(MULT[kind]??0);
-    const accSum=acc.reduce((s,a)=>s + a.qty*(PRICES[a.name]??0),0);
+    const accSum=sel.list.reduce((s,a)=>s + a.qty*(PRICES[a.name]??0),0);
     previewEl.textContent=`סה״כ: ${Math.round(base+accSum).toLocaleString("he-IL")} ₪`;
   }
 
   function resetForm(){
     addressEl.value=""; kindEl.value="תקופתי"; qtyEl.value=1;
     accListEl.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.checked=false);
-    accListEl.querySelectorAll('input[type="number"]').forEach(inp=>{inp.value=1; inp.disabled=true;});
+    accListEl.querySelectorAll('input[type="number"]').forEach(inp=>{inp.value=""; inp.disabled=true; inp.placeholder="—";});
     updatePreview();
   }
 
@@ -360,10 +414,16 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
     if(!date) return toastMsg("בחר תאריך");
     if(!address) return toastMsg("חסרה כתובת");
     if(qty<=0) return toastMsg("כמות חייבת להיות מעל 0");
+
+    const sel = selectedAccessories(true);
+    if(!sel.ok) return toastMsg("בחרת אביזר — חובה למלא כמות לאביזר");
+
     const now=new Date().toISOString();
-    const entry={id:uid(),date,address,kind,qty,accessories:selectedAccessories(),createdAt:now,updatedAt:now,deleted:false};
+    const entry={id:uid(),date,address,kind,qty,accessories:sel.list,createdAt:now,updatedAt:now,deleted:false};
+
     upsertLocal(entry);
     enqueue("upsert", entry);
+    pushBackup("add");
     render();
     resetForm();
     toastMsg("נוסף ✅");
@@ -371,9 +431,9 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
   }
 
   function del(id){
-    const now=new Date().toISOString();
     delLocal(id);
-    enqueue("delete", {id, deleted:true, updatedAt:now});
+    enqueue("delete", {id, deleted:true, updatedAt:new Date().toISOString()});
+    pushBackup("delete");
     render();
     toastMsg("נמחק ✅");
     syncNow({silent:true});
@@ -538,12 +598,37 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
       lastSyncEl.textContent = "אחרון: " + nowTxt;
       setSyncUI("ok", pulled ? `Drive: עודכן ✅ (+${pulled})` : "Drive: מסונכרן ✅");
       render();
+      pushBackup("sync_ok");
       if(!opts.silent) toastMsg("סנכרון הושלם ✅");
     }catch(e){
       setSyncUI("bad","Drive: שגיאה ("+e.message+")");
       if(!opts.silent) toastMsg("שגיאת סנכרון");
     }
   }
+
+  // Restore / Download backup
+  restoreBtn.addEventListener("click", ()=>{
+    const b = backups();
+    if(!b.length) return toastMsg("אין גיבוי לשחזור");
+    const last = b[0];
+    data = last.data || [];
+    queue = last.queue || [];
+    saveJson(K_DATA, data);
+    saveJson(K_QUEUE, queue);
+    render();
+    toastMsg("שוחזר מגיבוי ✅");
+  });
+
+  downloadJsonBtn.addEventListener("click", ()=>{
+    const payload = { exportedAt: new Date().toISOString(), data, queue };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "worklog_backup.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
 
   // init
   dateEl.value=todayISO();
@@ -554,11 +639,11 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
   buildAccessories();
   updatePreview();
   render();
+  renderBackupInfo();
 
   const last=loadLastSync();
   lastSyncEl.textContent="אחרון: "+(last ? new Date(last).toLocaleString("he-IL") : "—");
 
-  // UI bindings
   addBtn.addEventListener("click",(e)=>{e.preventDefault(); addRow();});
   resetBtn.addEventListener("click",(e)=>{e.preventDefault(); resetForm();});
   qtyEl.addEventListener("input", updatePreview);
@@ -577,6 +662,10 @@ background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:5
   }else{
     setSyncUI("bad","Drive: לא מחובר (הגדר URL)");
   }
+
+  // Create an initial backup on first load (only once)
+  const b = backups();
+  if(!b.length) pushBackup("init");
 })();
 </script>
 </body>
