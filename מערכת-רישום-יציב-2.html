@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>מערכת רישום עבודות — סנכרון דלתא יציב (Chunked)</title>
+<style>
+:root{--bg:#0b1220;--line:rgba(255,255,255,.10);--muted:rgba(255,255,255,.70);--txt:#fff;--accent:#4f8cff;--ok:#22c55e;--bad:#ef4444;--r:16px}
+*{box-sizing:border-box}
+body{margin:0;color:var(--txt);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans Hebrew",sans-serif;
+background:radial-gradient(900px 500px at 80% -10%, rgba(79,140,255,.25), transparent 60%),
+radial-gradient(900px 500px at 10% 0%, rgba(34,197,94,.12), transparent 55%), var(--bg)}
+.wrap{max-width:1240px;margin:24px auto 60px;padding:0 14px}
+header{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+h1{margin:0;font-size:22px}
+.sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.35;max-width:920px}
+.pill{font-size:12px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:rgba(255,255,255,.9);white-space:nowrap}
+.grid{display:grid;grid-template-columns:440px 1fr;gap:14px;align-items:start;margin-top:14px}
+@media (max-width:980px){.grid{grid-template-columns:1fr}}
+.card{background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.cardHead{padding:14px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.cardHead h2{margin:0;font-size:15px;font-weight:900}
+.cardBody{padding:14px}
+label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px}
+input,select,button{font:inherit;color:var(--txt);border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.22);outline:none;padding:12px 12px}
+input:focus,select:focus{border-color:rgba(79,140,255,.55);box-shadow:0 0 0 3px rgba(79,140,255,.18)}
+input,select{width:100%}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.field{flex:1 1 180px}
+button{cursor:pointer;font-weight:900;background:rgba(79,140,255,.18);border-color:rgba(79,140,255,.45)}
+button.primary{background:linear-gradient(180deg, rgba(79,140,255,.95), rgba(79,140,255,.70));border-color:rgba(79,140,255,.85)}
+button.ghost{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14)}
+button.ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.45)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.hint{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.35}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:right;vertical-align:top}
+th{background:rgba(255,255,255,.04);font-weight:900;color:rgba(255,255,255,.88)}
+.num{font-variant-numeric:tabular-nums}
+.toast{position:fixed;inset-inline-start:14px;inset-block-end:14px;max-width:min(560px, calc(100vw - 28px));
+padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
+background:rgba(15,26,46,.92);color:rgba(255,255,255,.92);display:none;z-index:50}
+.toast.show{display:block;animation:pop .18s ease-out}
+@keyframes pop{from{transform:translateY(6px);opacity:0}to{transform:translateY(0);opacity:1}}
+.status{font-size:12px;color:var(--muted)}
+.status.ok{color:rgba(34,197,94,.95)}
+.status.bad{color:rgba(239,68,68,.95)}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:980px){.split{grid-template-columns:1fr}}
+.accGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+@media (max-width:980px){.accGrid{grid-template-columns:1fr}}
+.accBox{border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:10px;background:rgba(0,0,0,.14)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>מערכת רישום עבודות — סנכרון יציב (מיזוג + Chunking)</h1>
+      <div class="sub">
+        ✅ אם בטלפון קיבלת <b>script_error</b>, זה לרוב בגלל מגבלת אורך URL. כאן הסנכרון נשלח במנות קטנות.<br/>
+        ✅ Pull אוטומטי בפתיחה + כל דקה.
+      </div>
+    </div>
+    <div class="pill" id="drivePill">Drive: לא מחובר</div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <div class="cardHead">
+        <h2>טופס הזנה</h2>
+        <span class="pill" id="preview">סה״כ: 0 ₪</span>
+      </div>
+      <div class="cardBody">
+        <div class="row">
+          <div class="field">
+            <label>תאריך</label>
+            <input id="date" type="date"/>
+          </div>
+          <div class="field">
+            <label>כתובת</label>
+            <input id="address" type="text" placeholder="לדוגמה: הרצל 10, תל אביב"/>
+          </div>
+        </div>
+
+        <div class="split" style="margin-top:10px;">
+          <div class="field">
+            <label>סוג החלפה</label>
+            <select id="kind">
+              <option value="תקופתי">תקופתי</option>
+              <option value="בודד">בודד</option>
+            </select>
+            <div class="hint">תקופתי = כמות × 15 | בודד = כמות × 50</div>
+          </div>
+          <div class="field">
+            <label>כמות</label>
+            <input id="qty" type="number" min="1" step="1" value="1"/>
+          </div>
+        </div>
+
+        <details style="margin-top:12px;">
+          <summary style="cursor:pointer;font-weight:900;">אביזרים (בחירה מרובה + כמות)</summary>
+          <div class="accGrid" id="accList"></div>
+          <div class="hint">מחירון: הארקה=35 | חצי 3/4=70 | 3/4=100 | חצי צול=85 | צול=115 | ברז 3/4=30 | ברז 1 צול=40</div>
+        </details>
+
+        <div class="actions">
+          <button class="primary" id="addBtn">הוסף לרשומות</button>
+          <button class="ghost" id="resetBtn" type="button">איפוס טופס</button>
+        </div>
+
+        <hr style="border:0;border-top:1px solid rgba(255,255,255,.10);margin:14px 0"/>
+
+        <div class="card" style="background:rgba(0,0,0,.14);border-radius:14px;">
+          <div class="cardHead" style="border-bottom:0;padding:12px 12px 6px;">
+            <h2 style="font-size:14px;">Google Drive Sync</h2>
+            <span class="pill" id="lastSync">אחרון: —</span>
+          </div>
+          <div class="cardBody" style="padding:12px;">
+            <label>Web App URL (מסתיים ב- /exec)</label>
+            <input id="endpoint" type="text" placeholder="https://script.google.com/macros/s/.../exec"/>
+            <div class="actions">
+              <button class="ghost" id="testBtn" type="button">בדיקת חיבור</button>
+              <button class="ok" id="syncBtn" type="button">סנכרון דו־כיווני עכשיו</button>
+            </div>
+            <div class="status" id="status">סטטוס: לא מחובר</div>
+            <div class="hint">סנכרון נשלח במנות כדי לעבוד טוב בטלפון.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="cardHead">
+        <h2>רשומות</h2>
+        <span class="pill">סה״כ: <span id="total">0</span> ₪</span>
+      </div>
+      <div class="cardBody">
+        <div class="row" style="align-items:end;">
+          <div class="field" style="flex:0 0 180px;">
+            <label>בחר חודש</label>
+            <input id="month" type="month"/>
+          </div>
+          <div class="field" style="flex:0 0 auto;">
+            <button class="ghost" id="exportBtn" type="button">ייצוא CSV</button>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;overflow:auto;border:1px solid rgba(255,255,255,.08);border-radius:14px;">
+          <table>
+            <thead><tr><th>תאריך</th><th>כתובת</th><th>סוג</th><th class="num">כמות</th><th>אביזרים</th><th class="num">סכום</th><th></th></tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <div class="card" style="margin-top:12px;background:rgba(0,0,0,.14);border-radius:14px;">
+          <div class="cardHead" style="padding:12px;border-bottom:1px solid rgba(255,255,255,.08);">
+            <h2 style="font-size:14px;">דוח רווחיות לפי סוג (לחודש הנבחר)</h2>
+          </div>
+          <div class="cardBody" style="padding:12px;">
+            <table>
+              <thead><tr><th>סוג</th><th class="num">מס׳ רשומות</th><th class="num">סה״כ כמות</th><th class="num">סה״כ הכנסה</th></tr></thead>
+              <tbody id="profit"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="hint" style="margin-top:10px;">מחיקה היא רק פר־רשומה (אין איפוס כללי).</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const MULT={"תקופתי":15,"בודד":50};
+  const PRICES={"הארקה":35,"חצי מערכת 3/4":70,"מערכת 3/4":100,"חצי מערכת צול":85,"מערכת צול":115,"ברז 3/4":30,"ברז 1 צול":40};
+
+  const K_DATA="worklog_chunk_data_v1";
+  const K_EP="worklog_chunk_endpoint_v1";
+  const K_LAST="worklog_chunk_lastSync_v1";
+  const K_QUEUE="worklog_chunk_queue_v1";
+
+  const $=id=>document.getElementById(id);
+  const dateEl=$("date"), addressEl=$("address"), kindEl=$("kind"), qtyEl=$("qty");
+  const accListEl=$("accList"), addBtn=$("addBtn"), resetBtn=$("resetBtn");
+  const monthEl=$("month"), rowsEl=$("rows"), totalEl=$("total"), previewEl=$("preview");
+  const profitEl=$("profit"), exportBtn=$("exportBtn");
+  const endpointEl=$("endpoint"), testBtn=$("testBtn"), syncBtn=$("syncBtn");
+  const statusEl=$("status"), drivePill=$("drivePill"), lastSyncEl=$("lastSync");
+  const toast=$("toast");
+
+  function toastMsg(msg){toast.textContent=msg;toast.classList.add("show");clearTimeout(toastMsg._t);toastMsg._t=setTimeout(()=>toast.classList.remove("show"),1700);}
+  function pad(n){return String(n).padStart(2,"0");}
+  function todayISO(){const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;}
+  function thisMonth(){const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}`;}
+  function uid(){try{const a=new Uint32Array(3);crypto.getRandomValues(a);return Array.from(a).map(x=>x.toString(16)).join("");}catch{return String(Date.now())+"_"+Math.random().toString(16).slice(2);}}
+  function esc(s){return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");}
+  function loadJson(k,fb){try{const r=localStorage.getItem(k);return r?JSON.parse(r):fb;}catch{return fb;}}
+  function saveJson(k,v){localStorage.setItem(k,JSON.stringify(v));}
+  function loadStr(k){return (localStorage.getItem(k)||"").trim();}
+  function saveStr(k,v){localStorage.setItem(k,(v||"").trim());}
+
+  let data=loadJson(K_DATA,[]);
+  let queue=loadJson(K_QUEUE,[]);
+
+  function setDriveUI(ok,text){
+    statusEl.textContent="סטטוס: "+text;
+    statusEl.classList.toggle("ok",!!ok);
+    statusEl.classList.toggle("bad",!ok);
+    drivePill.textContent="Drive: "+(ok?"מחובר":"לא מחובר");
+    drivePill.style.borderColor= ok ? "rgba(34,197,94,.45)" : "rgba(255,255,255,.14)";
+    drivePill.style.background= ok ? "rgba(34,197,94,.10)" : "rgba(255,255,255,.06)";
+  }
+
+  function buildAccessories(){
+    accListEl.innerHTML="";
+    Object.keys(PRICES).forEach(name=>{
+      const box=document.createElement("div");
+      box.className="accBox";
+      box.innerHTML=`
+        <label style="display:flex;align-items:center;gap:10px;margin:0;">
+          <input type="checkbox" data-name="${esc(name)}" style="accent-color:var(--accent);width:auto"/>
+          <span style="font-weight:900">${esc(name)}</span>
+          <span class="pill" style="margin-inline-start:auto">${PRICES[name]} ₪</span>
+        </label>
+        <div style="margin-top:8px;">
+          <label>כמות</label>
+          <input type="number" min="0" step="1" value="1" data-qty="${esc(name)}" disabled/>
+        </div>`;
+      accListEl.appendChild(box);
+    });
+    accListEl.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+      cb.addEventListener("change", ()=>{
+        const name=cb.dataset.name;
+        const q=accListEl.querySelector(`input[data-qty="${CSS.escape(name)}"]`);
+        if(q){q.disabled=!cb.checked;if(cb.checked && Number(q.value)<=0) q.value=1;}
+        updatePreview();
+      });
+    });
+    accListEl.querySelectorAll('input[type="number"]').forEach(inp=>inp.addEventListener("input", updatePreview));
+  }
+
+  function selectedAccessories(){
+    const res=[];
+    accListEl.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+      if(!cb.checked) return;
+      const name=cb.dataset.name;
+      const q=accListEl.querySelector(`input[data-qty="${CSS.escape(name)}"]`);
+      const qty=Math.max(0,Math.floor(Number(q?.value||0)));
+      if(qty>0) res.push({name,qty});
+    });
+    return res;
+  }
+
+  function compute(entry){
+    const base=Number(entry.qty||0)*(MULT[entry.kind]??0);
+    const acc=(entry.accessories||[]).reduce((s,a)=>s+(Number(a.qty||0)*(PRICES[a.name]??0)),0);
+    return {total:base+acc};
+  }
+
+  function computeFromForm(){
+    const kind=kindEl.value;
+    const qty=Math.max(0,Math.floor(Number(qtyEl.value||0)));
+    const acc=selectedAccessories();
+    const base=qty*(MULT[kind]??0);
+    const accSum=acc.reduce((s,a)=>s + a.qty*(PRICES[a.name]??0),0);
+    return {total:base+accSum};
+  }
+
+  function updatePreview(){
+    previewEl.textContent=`סה״כ: ${Math.round(computeFromForm().total).toLocaleString("he-IL")} ₪`;
+  }
+
+  function resetForm(){
+    addressEl.value=""; kindEl.value="תקופתי"; qtyEl.value=1;
+    accListEl.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.checked=false);
+    accListEl.querySelectorAll('input[type="number"]').forEach(inp=>{inp.value=1; inp.disabled=true;});
+    updatePreview();
+  }
+
+  function enqueue(action, entry){
+    queue.push({action, entry, at:new Date().toISOString()});
+    saveJson(K_QUEUE, queue);
+  }
+
+  function upsertLocal(entry){
+    const idx=data.findIndex(x=>x.id===entry.id);
+    if(idx===-1) data.push(entry); else data[idx]=entry;
+    saveJson(K_DATA, data);
+  }
+
+  function delLocal(id){
+    const idx=data.findIndex(x=>x.id===id);
+    if(idx!==-1){
+      data[idx].deleted=true;
+      data[idx].updatedAt=new Date().toISOString();
+      saveJson(K_DATA, data);
+    }
+  }
+
+  function addRow(){
+    const date=dateEl.value;
+    const address=(addressEl.value||"").trim();
+    const kind=kindEl.value;
+    const qty=Math.max(0,Math.floor(Number(qtyEl.value||0)));
+    if(!date) return toastMsg("בחר תאריך");
+    if(!address) return toastMsg("חסרה כתובת");
+    if(qty<=0) return toastMsg("כמות חייבת להיות מעל 0");
+    const now=new Date().toISOString();
+    const entry={id:uid(),date,address,kind,qty,accessories:selectedAccessories(),createdAt:now,updatedAt:now,deleted:false};
+    upsertLocal(entry);
+    enqueue("upsert", entry);
+    render();
+    resetForm();
+    toastMsg("נוסף ✅");
+    syncNow({silent:true});
+  }
+
+  function del(id){
+    const now=new Date().toISOString();
+    delLocal(id);
+    enqueue("delete", {id, deleted:true, updatedAt:now});
+    render();
+    toastMsg("נמחק ✅");
+    syncNow({silent:true});
+  }
+
+  function monthData(){
+    const m=monthEl.value;
+    return data.filter(e=>!e.deleted && String(e.date||"").startsWith(m)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  }
+
+  function render(){
+    const rows=monthData();
+    rowsEl.innerHTML="";
+    let total=0;
+    rows.forEach(e=>{
+      const t=compute(e).total; total+=t;
+      const accStr=(e.accessories||[]).length ? e.accessories.map(a=>`${a.name} × ${a.qty}`).join(" | ") : "—";
+      const tr=document.createElement("tr");
+      tr.innerHTML=`
+        <td>${e.date}</td><td>${esc(e.address)}</td><td>${e.kind}</td>
+        <td class="num">${e.qty}</td><td>${esc(accStr)}</td>
+        <td class="num">${Math.round(t).toLocaleString("he-IL")} ₪</td>
+        <td><button class="ghost" data-del="${e.id}" type="button" style="padding:8px 10px;border-radius:10px;">מחק</button></td>`;
+      rowsEl.appendChild(tr);
+    });
+    rowsEl.querySelectorAll("button[data-del]").forEach(b=>b.addEventListener("click", ()=>del(b.dataset.del)));
+    totalEl.textContent=Math.round(total).toLocaleString("he-IL");
+    renderProfit(rows);
+  }
+
+  function renderProfit(rows){
+    const agg={"תקופתי":{count:0,qty:0,total:0},"בודד":{count:0,qty:0,total:0}};
+    rows.forEach(e=>{const a=agg[e.kind]||(agg[e.kind]={count:0,qty:0,total:0});a.count++;a.qty+=Number(e.qty||0);a.total+=compute(e).total;});
+    profitEl.innerHTML="";
+    ["תקופתי","בודד"].forEach(k=>{
+      const a=agg[k];
+      const tr=document.createElement("tr");
+      tr.innerHTML=`<td>${k}</td><td class="num">${a.count.toLocaleString("he-IL")}</td><td class="num">${a.qty.toLocaleString("he-IL")}</td>
+      <td class="num" style="font-weight:900;color:rgba(34,197,94,.95)">${Math.round(a.total).toLocaleString("he-IL")} ₪</td>`;
+      profitEl.appendChild(tr);
+    });
+  }
+
+  function exportCSV(){
+    const rows=monthData();
+    const header=["תאריך","כתובת","סוג","כמות","אביזרים","סכום"];
+    const lines=[header.join(",")];
+    rows.forEach(e=>{
+      const t=Math.round(compute(e).total);
+      const accStr=(e.accessories||[]).map(a=>`${a.name} x${a.qty}`).join(" | ");
+      lines.push([e.date,csv(e.address),e.kind,e.qty,csv(accStr),t].join(","));
+    });
+    const blob=new Blob([lines.join("\n")],{type:"text/csv;charset=utf-8"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download=`worklog_${monthEl.value}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+  function csv(s){const str=String(s??""); if(/[",\n]/.test(str)) return `"${str.replaceAll('"','""')}"`; return str;}
+
+  // JSONP
+  function jsonp(endpoint, params){
+    return new Promise((resolve,reject)=>{
+      const cb="cb_"+uid();
+      const q=new URLSearchParams({callback:cb, ...params});
+      const url=endpoint + (endpoint.includes("?") ? "&" : "?") + q.toString();
+      const script=document.createElement("script");
+      script.src=url; script.async=true;
+      const timeout=setTimeout(()=>{cleanup(); reject(new Error("timeout"));}, 12000);
+      window[cb]=(payload)=>{cleanup(); resolve(payload);};
+      script.onerror=()=>{cleanup(); reject(new Error("script_error"));};
+      function cleanup(){clearTimeout(timeout); delete window[cb]; script.remove();}
+      document.body.appendChild(script);
+    });
+  }
+
+  function toB64Url(obj){
+    const json=JSON.stringify(obj);
+    return btoa(unescape(encodeURIComponent(json))).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
+  }
+
+  function loadLastSync(){return localStorage.getItem(K_LAST)||"";}
+  function saveLastSync(v){localStorage.setItem(K_LAST,v||"");}
+
+  async function testDrive(){
+    const ep=endpointEl.value.trim();
+    if(!ep) return setDriveUI(false,"חסר URL");
+    saveStr(K_EP, ep);
+    setDriveUI(false,"בודק...");
+    try{
+      const res=await jsonp(ep,{action:"ping", t:Date.now()});
+      if(res && res.ok){ setDriveUI(true,"מחובר ✅"); toastMsg("Drive מחובר ✅"); }
+      else setDriveUI(false,"תגובה לא תקינה");
+    }catch(e){
+      setDriveUI(false,"שגיאה בחיבור ("+e.message+")");
+    }
+  }
+
+  function mergeRemote(remoteItems){
+    let applied=0;
+    const map=new Map();
+    data.forEach(x=>{ if(x && x.id) map.set(String(x.id), x); });
+    (remoteItems||[]).forEach(r=>{
+      if(!r || !r.id || !r.updatedAt) return;
+      const id=String(r.id);
+      const cur=map.get(id);
+      const curTs=(cur && (cur.updatedAt||cur.createdAt||"")) || "";
+      if(!cur || String(r.updatedAt) > String(curTs)){ map.set(id, r); applied++; }
+    });
+    data=Array.from(map.values());
+    saveJson(K_DATA,data);
+    return applied;
+  }
+
+  function ackQueue(ackedIds){
+    if(!Array.isArray(ackedIds) || !ackedIds.length) return;
+    queue = queue.filter(q => !ackedIds.includes(q.entry?.id));
+    saveJson(K_QUEUE, queue);
+  }
+
+  // Chunking strategy: keep the encoded payload under a safe cap for mobile.
+  function buildPayload(pushSlice){
+    return {
+      since: loadLastSync(),
+      push: pushSlice.map(q=>({action:q.action, entry:q.entry, at:q.at})),
+      clientTime: new Date().toISOString()
+    };
+  }
+
+  async function syncOnce(ep, pushSlice){
+    const payload = buildPayload(pushSlice);
+    const encoded = toB64Url(payload);
+    // If even a single entry is too big, fail clearly.
+    if(encoded.length > 1800 && pushSlice.length === 1){
+      throw new Error("payload_too_large_single");
+    }
+    // Try sending
+    return await jsonp(ep, {action:"sync", p: encoded, t: Date.now()});
+  }
+
+  async function syncNow(opts={}){
+    const ep=endpointEl.value.trim();
+    if(!ep){ if(!opts.silent) setDriveUI(false,"חסר URL"); return; }
+    saveStr(K_EP, ep);
+
+    if(!opts.silent) setDriveUI(true,"מסנכרן...");
+
+    try{
+      // 1) PUSH in small batches (adaptive)
+      let remaining = queue.slice();
+      let serverTime = null;
+      let pulled = 0;
+
+      while(remaining.length){
+        // start with up to 15 items, then shrink until payload under cap
+        let n = Math.min(15, remaining.length);
+        let batch = remaining.slice(0, n);
+
+        // shrink if needed
+        while(n > 1){
+          const encoded = toB64Url(buildPayload(batch));
+          if(encoded.length <= 1800) break;
+          n = Math.floor(n/2);
+          batch = remaining.slice(0, n);
+        }
+
+        const res = await syncOnce(ep, batch);
+        if(!res || res.ok !== true) throw new Error(res?.error || "bad_response");
+
+        // Apply pulled changes (can be repeated; merge handles it)
+        pulled += mergeRemote(res.changes || []);
+        ackQueue(res.ackedIds || []);
+        serverTime = res.serverTime || serverTime;
+
+        // Recompute remaining from current queue (after ack)
+        remaining = queue.slice();
+        // Update since progressively to reduce future pulls
+        if(res.serverTime) saveLastSync(res.serverTime);
+      }
+
+      // 2) Always do a final pull (no push) to ensure we didn't miss changes
+      const res2 = await syncOnce(ep, []);
+      if(!res2 || res2.ok !== true) throw new Error(res2?.error || "bad_response");
+      pulled += mergeRemote(res2.changes || []);
+      if(res2.serverTime) saveLastSync(res2.serverTime);
+
+      lastSyncEl.textContent="אחרון: "+new Date().toLocaleString("he-IL");
+      setDriveUI(true, `סונכרן ✅ (נמשכו ${pulled}, בתור ${queue.length})`);
+      render();
+      if(!opts.silent) toastMsg("סנכרון הושלם ✅");
+    }catch(e){
+      setDriveUI(false,"שגיאה בסנכרון ("+e.message+")");
+      if(!opts.silent) toastMsg("שגיאה בסנכרון");
+    }
+  }
+
+  // init
+  dateEl.value=todayISO();
+  monthEl.value=thisMonth();
+  endpointEl.value=loadStr(K_EP);
+  buildAccessories();
+  updatePreview();
+  render();
+
+  const last=loadLastSync();
+  lastSyncEl.textContent="אחרון: "+(last ? new Date(last).toLocaleString("he-IL") : "—");
+  if(endpointEl.value) setDriveUI(true,"מוגדר ✅ (לחץ בדיקה)");
+
+  addBtn.addEventListener("click",(e)=>{e.preventDefault(); addRow();});
+  resetBtn.addEventListener("click",(e)=>{e.preventDefault(); resetForm();});
+  qtyEl.addEventListener("input", updatePreview);
+  kindEl.addEventListener("change", updatePreview);
+  monthEl.addEventListener("change", render);
+  exportBtn.addEventListener("click", exportCSV);
+
+  testBtn.addEventListener("click", testDrive);
+  syncBtn.addEventListener("click", ()=>syncNow({silent:false}));
+  endpointEl.addEventListener("change", ()=>saveStr(K_EP, endpointEl.value.trim()));
+
+  if(endpointEl.value){
+    setTimeout(()=>syncNow({silent:true}), 2500);
+    setInterval(()=>syncNow({silent:true}), 60000);
+  }
+
+})();
+</script>
+</body>
+</html>
